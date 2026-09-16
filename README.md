@@ -1,58 +1,55 @@
-# DatasheetBench
+# DatasheetBench — Masterarbeit Datenblatt-Analyzer
 
-Vergleichswerkbank für eine Masterarbeit: technische Datenblätter auslesen, Gold-Labels an euer Materialschema binden, **Azure GPT-5** gegen einen **lokalen Open-Source-Zweig** messen.
+Werkbank, um den bestehenden **Azure-GPT-5-Analyzer** gegen einen **selbst anlernbaren Open-Source-Zweig** zu vergleichen. PDF und JSON tragen dieselbe Materialnummer. Die Felder folgen dem Property-Schema der jeweiligen Baugruppe aus dem Materialsystem.
 
-Interne PDFs bleiben auf dem Rechner. Kein Colab, kein öffentliches Git mit Datenblättern.
+## Warum die Preview-URL nicht aufgeht
 
-## Was die App tut
+`http://127.0.0.1:47281` ist der Rechner, auf dem der Dev-Server gerade läuft — nicht dein Laptop. Von außen ist diese Adresse nicht erreichbar. Lokal starten (unten) oder das Repo von GitHub klonen.
 
-1. PDF und JSON unter **derselben Materialnummer** importieren (`ADPA7005CHIP.pdf` + `ADPA7005CHIP.json`).
-2. App-JSON (dein bestehender GPT-5-Export) als Entwurf zeigen, nach Korrektur als **Gold** markieren.
-3. Felder je Baugruppe / Property-Schema halten (RF Amplifier, OpAmp, RF Switch — erweiterbar in `src/lib/schemas.ts`).
-4. PDF in Text parsen (das ist die Modelleingabe, kein Stammdatenfeld).
-5. Vergleichen: App/GPT-5, lokaler Parser, optional Ollama, optional Azure.
-6. Feldgenauigkeit (Test-Split), JSONL-Export für LoRA on-premise.
+Zielrepository: [https://github.com/66kgmfsg4m-boop/Masterarbeit](https://github.com/66kgmfsg4m-boop/Masterarbeit)
+
+## Dokumentation
+
+| Dokument | Inhalt |
+|---|---|
+| [docs/00-ENTSCHEIDUNGEN.md](docs/00-ENTSCHEIDUNGEN.md) | GPT-5 nicht trainieren, kein Azure-Full-Training, LoRA on-prem, kein Colab mit internen PDFs |
+| [docs/01-DATENSATZ.md](docs/01-DATENSATZ.md) | PDF+JSON, Gold vs. App, Schemas je Baugruppe, 100 Datensätze, Split |
+| [docs/02-VERGLEICH.md](docs/02-VERGLEICH.md) | Extraktoren, Metriken, Feldvergleich |
+| [docs/03-TRAINING.md](docs/03-TRAINING.md) | JSONL, LoRA, R&S-Gateway (nur API) |
+| [docs/04-BETRIEB.md](docs/04-BETRIEB.md) | Installation, Import, Sicherheit |
+| [docs/05-THESIS.md](docs/05-THESIS.md) | Gliederungshilfe für die schriftliche Arbeit |
+| [docs/06-ARCHITEKTUR.md](docs/06-ARCHITEKTUR.md) | Ordner, APIs, wo Schemas liegen |
 
 ## Lokal starten
 
+Voraussetzung: Node.js 22+.
+
 ```bash
+git clone https://github.com/66kgmfsg4m-boop/Masterarbeit.git
+cd Masterarbeit
 npm install
 npm run seed
 npm run dev
 ```
 
-Öffnet [http://127.0.0.1:47281](http://127.0.0.1:47281). `seed` legt sieben öffentliche Beispielblätter an, darunter `ADPA7005CHIP` mit dem Unterschied typische Verlustleistung (Gold 6 W) vs. Absolut-Maximum aus der App (13.4 W).
+Browser: [http://127.0.0.1:47281](http://127.0.0.1:47281)
 
-Optionale Endpunkte in `.env.local` (siehe `.env.example`) oder unter Einstellungen:
+`npm run seed` legt sieben **öffentliche** Beispielblätter an (u. a. ADPA7005CHIP: Gold-Pdiss 6 W typisch, App-JSON 13.4 W Absolut-Maximum).
 
-- Azure OpenAI nur über den **freigegebenen Firmen-Tenant**
-- Ollama lokal, z. B. `qwen2.5:14b`
+## Ablauf für deinen Korpus (~100)
 
-## Datensatz (ca. 100 Stück)
+1. Aus der bestehenden App JSON exportieren, PDF daneben, gleicher Dateiname.
+2. Unter **Datensatz** beide Dateien importieren.
+3. Gegen das Blatt korrigieren, **Als Gold prüfen**.
+4. **Split erzeugen** (nach Baugruppe, ca. 65 / 15 / 20). Testset einfrieren.
+5. Lokalen Parser laufen lassen, optional Ollama on-prem.
+6. **Auswertung** für die Thesistabelle, **Export** für LoRA.
 
-- Eine ID = Materialnummer = Dateiname ohne Endung
-- JSON-Felder wie in deiner App, Schema in `_PropertySchemaUsed` / `ComponentType`
-- Fehlend einheitlich `"nicht gefunden"` oder `null`, nicht mischen
-- Nach Baugruppe splitten (Button „Split erzeugen“): grob 65 / 15 / 20, Test einfrieren
-- Test-20 gegen das PDF prüfen; Train stichprobenartig
+Interne R&S-Datenblätter nicht nach Colab, Hugging Face oder ins öffentliche Git legen. In diesem Repo liegen nur synthetische/öffentliche Demo-PDFs.
 
-Hundert Datensätze reichen für den ersten Vergleich und ein erstes LoRA, wenn nicht zu viele Schemas verdünnt werden.
+## Technik
 
-## LoRA (nur interne GPU)
-
-JSONL unter `/export` herunterladen, dann auf einem GPU-Host ohne Cloud-Upload:
-
-```bash
-pip install -r training/requirements.txt
-python training/lora_finetune.py \
-  --train datasheet-sft-train.jsonl \
-  --val datasheet-sft-val.jsonl \
-  --base Qwen/Qwen2.5-7B-Instruct \
-  --out models/datasheet-lora
-```
-
-Das Firmen-LLM-Gateway (nur API-Access) ersetzt das nicht: darüber kannst du inferenzen, nicht trainieren.
-
-## Sicherheit
-
-Echte R&S-Datenblätter nicht nach Colab, Hugging Face oder privates GitHub. Diese App speichert unter `data/records/` lokal. `data/settings.json` ist gitignoriert.
+- Next.js (App Router), TypeScript, Tailwind, shadcn/ui
+- PDF-Text: `unpdf`
+- Bewertung: `src/lib/evaluate.ts` (Zahlen ±1 %, `"nicht gefunden"` = fehlend)
+- LoRA-Skript: `training/lora_finetune.py`
